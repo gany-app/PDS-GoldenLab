@@ -1,6 +1,6 @@
-# PDS Lab 1
+# PDS GoldenLab
 
-`pds-lab-1` 是 **PDS-Bridge v0.02 Golden Lab** 的第一座练习场。
+`PDS-GoldenLab` 是 PDS-Bridge 的长期 Golden Lab 仓库。`main` 保持干净基线，各版本使用独立分支进行端到端实验；当前 **v0.02** 使用 `v002` 分支。
 
 这个仓库故意保持极简，用来验证一条真实的软件开发闭环：
 
@@ -47,7 +47,7 @@ Human
 
 ## Repository rule
 
-这个 README 是仓库的 **seed commit**。
+这个 README 与 `main` 共同构成仓库的干净基线。v0.02 的实验在 `v002` 分支进行。
 
 从此之后，Golden Run 产生的页面代码、任务分支、提交、Pull Request 和运行记录，应尽量通过 PDS-Bridge 工作流产生，而不是人工提前写入。
 
