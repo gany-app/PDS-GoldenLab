@@ -1,6 +1,6 @@
 # PDS GoldenLab
 
-`PDS-GoldenLab` 是 PDS-Bridge 的长期 Golden Lab 仓库。`main` 保持干净基线，各版本使用独立分支进行端到端实验；当前 **v0.02** 使用 `v002` 分支。
+`PDS-GoldenLab` 是 PDS-Bridge 的长期 Golden Lab 仓库。`main` 保持干净基线，各版本使用独立分支进行端到端实验；版本实验使用独立分支：v0.02 使用 `v002`，v0.03 使用 `v003`。
 
 这个仓库故意保持极简，用来验证一条真实的软件开发闭环：
 
@@ -47,7 +47,7 @@ Human
 
 ## Repository rule
 
-这个 README 与 `main` 共同构成仓库的干净基线。v0.02 的实验在 `v002` 分支进行。
+这个 README 与 `main` 共同构成仓库的干净基线。v0.03 的 LibreChat Golden Run 在 `v003` 分支进行；该分支仍以验证 PDS-Bridge 全流程为目的，不预置业务页面代码。
 
 从此之后，Golden Run 产生的页面代码、任务分支、提交、Pull Request 和运行记录，应尽量通过 PDS-Bridge 工作流产生，而不是人工提前写入。
 
