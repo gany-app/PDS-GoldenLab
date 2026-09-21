@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PDS v0.03 MCP Validation</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100%;
+    }
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: clamp(1rem, 4vw, 3rem);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      text-align: center;
+    }
+    main {
+      width: 100%;
+      max-width: 48rem;
+      padding: clamp(1.5rem, 5vw, 3rem);
+      border-radius: 1rem;
+      background: #1e293b;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+    }
+    .pipeline {
+      margin: 0 0 1.5rem;
+      font-size: clamp(1.1rem, 4vw, 2rem);
+      font-weight: 600;
+      line-height: 1.4;
+      letter-spacing: 0.01em;
+      word-break: break-word;
+    }
+    .status {
+      margin: 0;
+      font-size: clamp(1rem, 3.5vw, 1.5rem);
+      font-weight: 500;
+      color: #4ade80;
+    }
+    .meta {
+      margin-top: 2rem;
+      font-size: clamp(0.75rem, 2.5vw, 0.9rem);
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 class="pipeline">LibreChat -&gt; MCP -&gt; PDS -&gt; Coding Agent</h1>
+    <p class="status">Validation Passed</p>
+    <p class="meta">PDS v0.03 workflow validation evidence</p>
+  </main>
+</body>
+</html>
