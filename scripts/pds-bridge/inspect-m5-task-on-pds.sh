@@ -96,7 +96,8 @@ async function waitForNotification(url,headers,cursor) {
   stage='get_task_events';
   let events=decoded(await client.callTool({name:'get_task_events',arguments:{taskId,afterEventId:0,limit:500}},undefined,{timeout:15000}));
   if (!Array.isArray(events) || events.some(item=>item.taskId!==taskId)) throw Error('Event mismatch');
-  let notification=events.filter(item=>['COMPLETED','FAILED','BLOCKED','WAITING_HUMAN','CANCELLED'].includes(item.toState)).at(-1);
+  let notification=events.filter(item=>item.toState===timeline.task.state &&
+    ['COMPLETED','FAILED','BLOCKED','WAITING_HUMAN','CANCELLED'].includes(item.toState)).at(-1);
   if (!notification) {
     stage='await SSE notification';
     console.log('M5_INSPECT_WAITING: task='+timeline.task.state+'; waiting on SSE for at most 6 minutes');
@@ -105,7 +106,8 @@ async function waitForNotification(url,headers,cursor) {
     timeline=decoded(await client.callTool({name:'get_task',arguments:{taskId}},undefined,{timeout:15000}));
     events=decoded(await client.callTool({name:'get_task_events',arguments:{taskId,afterEventId:0,limit:500}},undefined,{timeout:15000}));
     if (!Array.isArray(events) || events.some(item=>item.taskId!==taskId)) throw Error('Event mismatch');
-    notification=events.filter(item=>['COMPLETED','FAILED','BLOCKED','WAITING_HUMAN','CANCELLED'].includes(item.toState)).at(-1);
+    notification=events.filter(item=>item.toState===timeline.task.state &&
+      ['COMPLETED','FAILED','BLOCKED','WAITING_HUMAN','CANCELLED'].includes(item.toState)).at(-1);
   }
   stage='SSE replay';
   let replayResult='PENDING_NO_NOTIFICATION';
