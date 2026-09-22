@@ -20,6 +20,17 @@ function decoded(result) {
   if (!text) throw Error('MCP tool returned no text');
   return JSON.parse(text);
 }
+function safeSummary(value) {
+  let message=String(value||'NONE');
+  for (const [key,secret] of Object.entries(process.env)) {
+    if (/TOKEN|KEY|SECRET|PASSWORD|CREDENTIAL/i.test(key) && secret?.length>=4) {
+      message=message.split(secret).join('[REDACTED]');
+    }
+  }
+  return message.replace(/Bearer\s+\S+/gi,'Bearer [REDACTED]')
+    .replace(/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{16,})\b/g,'[REDACTED]')
+    .slice(0,600).replace(/[\r\n]+/g,' ');
+}
 async function replay(url,headers,cursor,useHeader) {
   const endpoint=new URL(url); endpoint.pathname='/events';
   endpoint.searchParams.set('taskId',taskId);
@@ -126,6 +137,10 @@ async function waitForNotification(url,headers,cursor) {
   console.log('taskId='+taskId);
   console.log('state='+timeline.task.state);
   console.log('stateVersion='+timeline.task.stateVersion);
+  console.log('lastFailureCode='+(timeline.attempts?.at(-1)?.failureCode||'NONE'));
+  console.log('lastFailureMessage='+safeSummary(timeline.attempts?.at(-1)?.failureMessage));
+  const blocked=events.filter(e=>e.eventType==='TASK_BLOCKED_BY_RUNTIME').at(-1);
+  console.log('blockReason='+safeSummary(blocked?.payload?.reason));
   console.log('contractLevel='+(timeline.contracts?.at(-1)?.minimumLevel||'NONE'));
   console.log('attempts='+JSON.stringify((timeline.attempts||[]).map(a=>({workerId:a.workerId,
     state:a.state,profileId:a.modelProfileId,failureClass:a.failureClass}))));
