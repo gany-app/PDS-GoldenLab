@@ -12,7 +12,7 @@ const {StreamableHTTPClientTransport} = require('@modelcontextprotocol/sdk/clien
 const {extractEnvVariable} = require('librechat-data-provider');
 const taskId = process.env.PDS_M5_TASK_ID;
 let client, stage='connect';
-const watchdog = setTimeout(()=>{console.error('M5_INSPECT_FAILED: timeout at '+stage);process.exit(1)},45000);
+const watchdog = setTimeout(()=>{console.error('M5_INSPECT_FAILED: timeout at '+stage);process.exit(1)},430000);
 
 function decoded(result) {
   if (result.isError) throw Error('MCP tool returned an error');
@@ -45,6 +45,42 @@ async function replay(url,headers,cursor,useHeader) {
     return buffer;
   } finally {clearTimeout(timeout);controller.abort()}
 }
+async function waitForNotification(url,headers,cursor) {
+  const endpoint=new URL(url); endpoint.pathname='/events';
+  endpoint.searchParams.set('taskId',taskId);
+  endpoint.searchParams.set('after',String(cursor));
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),360000);
+  let reader;
+  try {
+    const response=await fetch(endpoint,{headers,signal:controller.signal});
+    if (!response.ok || !response.headers.get('content-type')?.includes('text/event-stream')) {
+      throw Error('SSE endpoint unavailable');
+    }
+    reader=response.body.getReader();
+    const decoder=new TextDecoder();
+    let buffer='';
+    while (!controller.signal.aborted) {
+      const {value,done}=await reader.read();
+      if (done) throw Error('SSE closed before a Task notification');
+      buffer+=decoder.decode(value,{stream:true});
+      let boundary;
+      while ((boundary=buffer.indexOf('\n\n'))>=0) {
+        const frame=buffer.slice(0,boundary);
+        buffer=buffer.slice(boundary+2);
+        if (/^event: TASK_(COMPLETED|FAILED|BLOCKED|WAITING_HUMAN|CANCELLED)$/m.test(frame)) return true;
+      }
+      if (buffer.length>20000) throw Error('SSE frame too large');
+    }
+    return false;
+  } catch(error) {
+    if (controller.signal.aborted) return false;
+    throw error;
+  } finally {
+    clearTimeout(timeout); controller.abort();
+    await reader?.cancel().catch(()=>{});
+  }
+}
 (async()=>{
   let config;
   try { config=require('js-yaml').load(fs.readFileSync('/app/librechat.yaml','utf8')) }
@@ -55,12 +91,22 @@ async function replay(url,headers,cursor,useHeader) {
   client=new Client({name:'pds-m5-inspection',version:'0.1'},{capabilities:{}});
   await client.connect(new StreamableHTTPClientTransport(new URL(entry.url),{requestInit:{headers}}),{timeout:15000});
   stage='get_task';
-  const timeline=decoded(await client.callTool({name:'get_task',arguments:{taskId}},undefined,{timeout:15000}));
+  let timeline=decoded(await client.callTool({name:'get_task',arguments:{taskId}},undefined,{timeout:15000}));
   if (timeline.task?.taskId!==taskId) throw Error('Task ID mismatch');
   stage='get_task_events';
-  const events=decoded(await client.callTool({name:'get_task_events',arguments:{taskId,afterEventId:0,limit:500}},undefined,{timeout:15000}));
+  let events=decoded(await client.callTool({name:'get_task_events',arguments:{taskId,afterEventId:0,limit:500}},undefined,{timeout:15000}));
   if (!Array.isArray(events) || events.some(item=>item.taskId!==taskId)) throw Error('Event mismatch');
-  const notification=events.filter(item=>['COMPLETED','FAILED','BLOCKED','WAITING_HUMAN','CANCELLED'].includes(item.toState)).at(-1);
+  let notification=events.filter(item=>['COMPLETED','FAILED','BLOCKED','WAITING_HUMAN','CANCELLED'].includes(item.toState)).at(-1);
+  if (!notification) {
+    stage='await SSE notification';
+    console.log('M5_INSPECT_WAITING: task='+timeline.task.state+'; waiting on SSE for at most 6 minutes');
+    await waitForNotification(entry.url,headers,events.at(-1)?.eventId||0);
+    stage='refresh Task timeline';
+    timeline=decoded(await client.callTool({name:'get_task',arguments:{taskId}},undefined,{timeout:15000}));
+    events=decoded(await client.callTool({name:'get_task_events',arguments:{taskId,afterEventId:0,limit:500}},undefined,{timeout:15000}));
+    if (!Array.isArray(events) || events.some(item=>item.taskId!==taskId)) throw Error('Event mismatch');
+    notification=events.filter(item=>['COMPLETED','FAILED','BLOCKED','WAITING_HUMAN','CANCELLED'].includes(item.toState)).at(-1);
+  }
   stage='SSE replay';
   let replayResult='PENDING_NO_NOTIFICATION';
   if (notification) {
