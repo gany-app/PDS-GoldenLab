@@ -80,8 +80,8 @@ check_tasks
 install -d -m 0700 /var/backups/pds-bridge
 BACKUP="$(mktemp -d /var/backups/pds-bridge/m5-exit-code-XXXXXXXX)"
 cp -a "$UNIT_FILE" "$BACKUP/$UNIT"
-systemctl stop "$UNIT"
 ROLLBACK=1
+systemctl stop "$UNIT"
 check_tasks
 python3 - "$DB" "$BACKUP/m5.sqlite" <<'PY'
 import sqlite3, sys
