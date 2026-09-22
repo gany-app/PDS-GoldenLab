@@ -138,6 +138,7 @@ for _ in {1..40}; do
   sleep 0.5
 done
 [[ "$READY" -eq 1 ]] || fail "M5 service did not become ready; inspect: journalctl -u $STAGE_UNIT -n 60"
+systemctl is-active --quiet "$STAGE_UNIT" || fail 'M5 service exited while checking readiness'
 
 install -d -m 0700 /var/backups/pds-bridge
 BACKUP_DIR="$(mktemp -d "/var/backups/pds-bridge/m5-connect-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")"
