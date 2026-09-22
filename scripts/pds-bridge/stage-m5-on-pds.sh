@@ -6,6 +6,7 @@ umask 077
 SOURCE_COMMIT="ca75bba895f259417244f829e3ff1a65dc5409e8"
 LIVE_DIR="/opt/pds-bridge/candidates/v0.03"
 STAGE_DIR="/opt/pds-bridge/candidates/v0.1-m5-stage"
+STAGE_CONFIG_DIR="/etc/pds-bridge/m5-stage"
 LIVE_CONFIG="/etc/pds-bridge/v003.json"
 STAGE_PORT="8791"
 SMOKE_PID=""
@@ -18,33 +19,44 @@ trap cleanup EXIT
 fail() { printf 'M5_STAGE_FAILED: %s\n' "$1" >&2; exit 1; }
 [[ "$(id -u)" -eq 0 ]] || fail "run as root so the candidate can read the existing PDS configuration"
 [[ -f "$LIVE_CONFIG" && ( -d "$LIVE_DIR/.git" || -f "$LIVE_DIR/.git" ) ]] || fail "v0.03 config or checkout missing"
-command -v git >/dev/null && command -v npm >/dev/null && command -v python3 >/dev/null && command -v curl >/dev/null || fail "git, npm, python3 and curl are required"
+command -v git >/dev/null && command -v npm >/dev/null && command -v python3 >/dev/null && command -v curl >/dev/null && command -v runuser >/dev/null || fail "git, npm, python3, curl and runuser are required"
 [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail "script source commit is not pinned"
+SOURCE_OWNER="$(stat -c %U "$LIVE_DIR")"
+id "$SOURCE_OWNER" >/dev/null 2>&1 || fail "v0.03 checkout owner is not a local account"
+SOURCE_GROUP="$(id -gn "$SOURCE_OWNER")"
+as_source_owner() {
+  if [[ "$SOURCE_OWNER" == root ]]; then "$@"; else runuser -u "$SOURCE_OWNER" -- "$@"; fi
+}
 
-LIVE_STATUS="$(git -C "$LIVE_DIR" status --porcelain | wc -l | tr -d ' ')"
-LIVE_HEAD="$(git -C "$LIVE_DIR" rev-parse HEAD)"
+LIVE_STATUS="$(as_source_owner git -C "$LIVE_DIR" status --porcelain | wc -l | tr -d ' ')"
+LIVE_HEAD="$(as_source_owner git -C "$LIVE_DIR" rev-parse HEAD)"
 LIVE_SERVICE="$(systemctl is-active pds-bridge-v003-mcp.service 2>/dev/null || true)"
 [[ "$LIVE_SERVICE" == active ]] || fail "v0.03 service must remain active for isolated candidate staging"
 
 if [[ ! -d "$STAGE_DIR/.git" ]]; then
-  [[ ! -e "$STAGE_DIR" ]] || fail "candidate directory already exists and is not a Git checkout"
-  git clone -q --no-hardlinks "$LIVE_DIR" "$STAGE_DIR" || fail "local isolated clone failed"
-  LIVE_REMOTE="$(git -C "$LIVE_DIR" remote get-url origin)" || fail "v0.03 origin missing"
-  git -C "$STAGE_DIR" remote set-url origin "$LIVE_REMOTE"
+  [[ ! -e "$STAGE_DIR" || -d "$STAGE_DIR" && -z "$(ls -A "$STAGE_DIR")" ]] || fail "candidate directory already exists and is not an empty Git checkout"
+  install -d -m 0700 -o "$SOURCE_OWNER" -g "$SOURCE_GROUP" "$STAGE_DIR"
+  as_source_owner git clone -q --no-hardlinks "$LIVE_DIR" "$STAGE_DIR" || fail "local isolated clone failed"
+  LIVE_REMOTE="$(as_source_owner git -C "$LIVE_DIR" remote get-url origin)" || fail "v0.03 origin missing"
+  as_source_owner git -C "$STAGE_DIR" remote set-url origin "$LIVE_REMOTE"
+else
+  [[ -z "$(git -c "safe.directory=$STAGE_DIR" -C "$STAGE_DIR" status --porcelain)" ]] || fail "candidate checkout has local changes"
+  chown -R "$SOURCE_OWNER:$SOURCE_GROUP" "$STAGE_DIR"
 fi
-[[ -z "$(git -C "$STAGE_DIR" status --porcelain)" ]] || fail "candidate checkout has local changes"
-git -C "$STAGE_DIR" fetch -q origin v0.1 2>/dev/null || fail "candidate fetch failed; check GitHub credentials on PDS"
-git -C "$STAGE_DIR" merge-base --is-ancestor "$SOURCE_COMMIT" FETCH_HEAD || fail "pinned code commit is not on the v0.1 branch"
-git -C "$STAGE_DIR" checkout -q --detach "$SOURCE_COMMIT"
-[[ "$(git -C "$STAGE_DIR" rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || fail "candidate source SHA mismatch"
+[[ -z "$(as_source_owner git -C "$STAGE_DIR" status --porcelain)" ]] || fail "candidate checkout has local changes"
+as_source_owner git -C "$STAGE_DIR" fetch -q origin v0.1 2>/dev/null || fail "candidate fetch failed; check GitHub credentials for the repository owner"
+as_source_owner git -C "$STAGE_DIR" merge-base --is-ancestor "$SOURCE_COMMIT" FETCH_HEAD || fail "pinned code commit is not on the v0.1 branch"
+as_source_owner git -C "$STAGE_DIR" checkout -q --detach "$SOURCE_COMMIT"
+[[ "$(as_source_owner git -C "$STAGE_DIR" rev-parse HEAD)" == "$SOURCE_COMMIT" ]] || fail "candidate source SHA mismatch"
 
 cd "$STAGE_DIR"
-npm ci --no-audit --no-fund > /tmp/pds-m5-stage-npm.log 2>&1 || fail "npm ci failed (details: /tmp/pds-m5-stage-npm.log)"
-npm run check > /tmp/pds-m5-stage-check.log 2>&1 || fail "npm run check failed (details: /tmp/pds-m5-stage-check.log)"
+as_source_owner npm ci --no-audit --no-fund > /tmp/pds-m5-stage-npm.log 2>&1 || fail "npm ci failed (details: /tmp/pds-m5-stage-npm.log)"
+as_source_owner npm run check > /tmp/pds-m5-stage-check.log 2>&1 || fail "npm run check failed (details: /tmp/pds-m5-stage-check.log)"
 
-python3 - "$LIVE_CONFIG" "$STAGE_DIR" <<'PY'
+install -d -m 0700 "$STAGE_CONFIG_DIR"
+python3 - "$LIVE_CONFIG" "$STAGE_CONFIG_DIR" <<'PY'
 import json, pathlib, sys
-legacy_path = pathlib.Path(sys.argv[1]); stage_dir = pathlib.Path(sys.argv[2])
+legacy_path = pathlib.Path(sys.argv[1]); config_dir = pathlib.Path(sys.argv[2])
 config = json.loads(legacy_path.read_text())
 cto = (config.get('roles') or {}).get('cto') or {}
 if not cto.get('enabled', True) or cto.get('kind') != 'codex-cli':
@@ -88,21 +100,21 @@ ladder = {'version':1, 'configRevisionId':'pds-m5-stage-1', 'ctoAdapterId':cto['
                        'command':a.get('command',a['kind'].split('-')[0])} for a in adapters.values()
                       if a['adapterId'] in {w['adapter'] for w in ladder_workers}],
           'modelProfiles':models, 'workers':ladder_workers}
-(stage_dir/'m5-stage-worker-ladder.json').write_text(json.dumps(ladder,indent=2)+'\n')
+(config_dir/'m5-stage-worker-ladder.json').write_text(json.dumps(ladder,indent=2)+'\n')
 stage = {'version':1, 'legacyConfigPath':str(legacy_path),
-         'workerLadderPath':str(stage_dir/'m5-stage-worker-ladder.json'),
+         'workerLadderPath':str(config_dir/'m5-stage-worker-ladder.json'),
          'databasePath':'/var/lib/pds-bridge/runtime-v01-stage.db',
          'workspaceRoot':'/srv/pds-bridge/workspaces/m5-stage',
          'verificationCommands':{p['projectId']:[{'name':'git diff check','command':'git',
            'args':['diff','--check']}] for p in projects}}
-(stage_dir/'m5-stage-runtime.json').write_text(json.dumps(stage,indent=2)+'\n')
-(stage_dir/'m5-stage-report.json').write_text(json.dumps({
+(config_dir/'m5-stage-runtime.json').write_text(json.dumps(stage,indent=2)+'\n')
+(config_dir/'m5-stage-report.json').write_text(json.dumps({
     'projectIds':[p['projectId'] for p in projects], 'workerIds':[w['workerId'] for w in workers],
     'modelSelectorsUnpinned':defaults, 'verification':'git diff --check (stage only)'},indent=2)+'\n')
 PY
 
 [[ -z "$(curl --noproxy '*' -fsS --max-time 1 "http://127.0.0.1:${STAGE_PORT}/healthz" 2>/dev/null || true)" ]] || fail "stage port already serves a process"
-PDS_BRIDGE_M5_CONFIG="$STAGE_DIR/m5-stage-runtime.json" PDS_MCP_HOST=127.0.0.1 PDS_MCP_PORT="$STAGE_PORT" \
+PDS_BRIDGE_M5_CONFIG="$STAGE_CONFIG_DIR/m5-stage-runtime.json" PDS_MCP_HOST=127.0.0.1 PDS_MCP_PORT="$STAGE_PORT" \
   node --no-warnings --experimental-strip-types src/mcp/http-main.ts > /tmp/pds-m5-stage-http.log 2>&1 &
 SMOKE_PID="$!"
 HEALTH=""
@@ -117,5 +129,5 @@ done
 printf 'PDS_M5_STAGE_REPORT_BEGIN\n'
 printf 'sourceCommit=%s\nlegacyHead=%s\nlegacyModifiedFiles=%s\nlegacyService=%s\n' "$SOURCE_COMMIT" "$LIVE_HEAD" "$LIVE_STATUS" "$LIVE_SERVICE"
 printf 'tests=PASS\nhttpHealth=ready\n'
-cat "$STAGE_DIR/m5-stage-report.json"
+cat "$STAGE_CONFIG_DIR/m5-stage-report.json"
 printf 'PDS_M5_STAGE_REPORT_END\n'
