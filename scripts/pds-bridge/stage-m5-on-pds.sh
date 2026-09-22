@@ -38,7 +38,9 @@ LIVE_SERVICE="$(systemctl is-active pds-bridge-v003-mcp.service 2>/dev/null || t
 
 if [[ ! -d "$STAGE_DIR/.git" ]]; then
   [[ ! -e "$STAGE_DIR" || -d "$STAGE_DIR" && -z "$(ls -A "$STAGE_DIR")" ]] || fail "candidate directory already exists and is not an empty Git checkout"
-  git -c "safe.directory=$LIVE_DIR" clone -q --no-hardlinks "$LIVE_DIR" "$STAGE_DIR" || fail "local isolated clone failed"
+  # Local clone opens the source via its .git path in a child Git process.
+  git -c "safe.directory=$LIVE_DIR" -c "safe.directory=$LIVE_DIR/.git" \
+    clone -q --no-hardlinks "$LIVE_DIR" "$STAGE_DIR" || fail "local isolated clone failed"
   git -C "$STAGE_DIR" remote set-url origin "$LIVE_REMOTE"
 else
   [[ -z "$(git --no-optional-locks -c "safe.directory=$STAGE_DIR" -C "$STAGE_DIR" status --porcelain)" ]] || fail "candidate checkout has local changes"
