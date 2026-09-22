@@ -4,7 +4,7 @@ set -euo pipefail
 umask 077
 
 # Filled with the reviewed private v0.1 commit before publishing this script.
-M6_COMMIT=2be05874938cbd9de442954c79011613919ef656
+M6_COMMIT=972fa8156b991a5d464ff286d0183d7be4715547
 OLD_COMMIT=515f8c06fc0ef30ba95e877716b1015f4136f7c9
 OLD_DIR=/opt/pds-bridge/candidates/v0.1-m5-review-evidence
 NEW_DIR=/opt/pds-bridge/candidates/v0.1-m6-operations
