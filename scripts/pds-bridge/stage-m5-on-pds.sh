@@ -28,21 +28,22 @@ as_source_owner() {
   if [[ "$SOURCE_OWNER" == root ]]; then "$@"; else runuser -u "$SOURCE_OWNER" -- "$@"; fi
 }
 
-LIVE_STATUS="$(as_source_owner git -C "$LIVE_DIR" status --porcelain | wc -l | tr -d ' ')"
-LIVE_HEAD="$(as_source_owner git -C "$LIVE_DIR" rev-parse HEAD)"
+# The deployed checkout may contain root-owned Git metadata from prior maintenance.
+# Inspect it as root without refreshing its index; trust only this path for this call.
+LIVE_STATUS="$(git --no-optional-locks -c "safe.directory=$LIVE_DIR" -C "$LIVE_DIR" status --porcelain | wc -l | tr -d ' ')"
+LIVE_HEAD="$(git -c "safe.directory=$LIVE_DIR" -C "$LIVE_DIR" rev-parse HEAD)"
+LIVE_REMOTE="$(git -c "safe.directory=$LIVE_DIR" -C "$LIVE_DIR" remote get-url origin)" || fail "v0.03 origin missing"
 LIVE_SERVICE="$(systemctl is-active pds-bridge-v003-mcp.service 2>/dev/null || true)"
 [[ "$LIVE_SERVICE" == active ]] || fail "v0.03 service must remain active for isolated candidate staging"
 
 if [[ ! -d "$STAGE_DIR/.git" ]]; then
   [[ ! -e "$STAGE_DIR" || -d "$STAGE_DIR" && -z "$(ls -A "$STAGE_DIR")" ]] || fail "candidate directory already exists and is not an empty Git checkout"
-  install -d -m 0700 -o "$SOURCE_OWNER" -g "$SOURCE_GROUP" "$STAGE_DIR"
-  as_source_owner git clone -q --no-hardlinks "$LIVE_DIR" "$STAGE_DIR" || fail "local isolated clone failed"
-  LIVE_REMOTE="$(as_source_owner git -C "$LIVE_DIR" remote get-url origin)" || fail "v0.03 origin missing"
-  as_source_owner git -C "$STAGE_DIR" remote set-url origin "$LIVE_REMOTE"
+  git -c "safe.directory=$LIVE_DIR" clone -q --no-hardlinks "$LIVE_DIR" "$STAGE_DIR" || fail "local isolated clone failed"
+  git -C "$STAGE_DIR" remote set-url origin "$LIVE_REMOTE"
 else
-  [[ -z "$(git -c "safe.directory=$STAGE_DIR" -C "$STAGE_DIR" status --porcelain)" ]] || fail "candidate checkout has local changes"
-  chown -R "$SOURCE_OWNER:$SOURCE_GROUP" "$STAGE_DIR"
+  [[ -z "$(git --no-optional-locks -c "safe.directory=$STAGE_DIR" -C "$STAGE_DIR" status --porcelain)" ]] || fail "candidate checkout has local changes"
 fi
+chown -R "$SOURCE_OWNER:$SOURCE_GROUP" "$STAGE_DIR"
 [[ -z "$(as_source_owner git -C "$STAGE_DIR" status --porcelain)" ]] || fail "candidate checkout has local changes"
 as_source_owner git -C "$STAGE_DIR" fetch -q origin v0.1 2>/dev/null || fail "candidate fetch failed; check GitHub credentials for the repository owner"
 as_source_owner git -C "$STAGE_DIR" merge-base --is-ancestor "$SOURCE_COMMIT" FETCH_HEAD || fail "pinned code commit is not on the v0.1 branch"
