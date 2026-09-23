@@ -11,13 +11,16 @@ GATEWAY_PORT=4001
 fail() { printf 'PDS_M7_GATEWAY_AUDIT_FAILED: %s\n' "$1" >&2; exit 1; }
 
 [[ $(id -u) -eq 0 ]] || fail 'run with sudo'
-for command_name in docker systemctl python3 ss df awk sha256sum mktemp rm; do
+for command_name in docker systemctl python3 ss df awk sha256sum mktemp rm ip; do
   command -v "$command_name" >/dev/null || fail "missing $command_name"
 done
 docker info >/dev/null 2>&1 || fail 'Docker daemon is unavailable'
 docker compose version >/dev/null 2>&1 || fail 'Docker Compose plugin is unavailable'
 systemctl is-active --quiet "$CANDIDATE_UNIT" || fail 'M6 candidate service is not active'
 systemctl is-active --quiet "$LEGACY_UNIT" || fail 'v0.03 service is not active'
+
+mapfile -t ZEROTIER_ADDRESSES < <(ip -o -4 addr show | awk '$2 ~ /^zt/ {print $2"="$4}')
+[[ ${#ZEROTIER_ADDRESSES[@]} -gt 0 ]] || fail 'no active ZeroTier IPv4 interface found'
 
 mapfile -t LIBRECHAT_IDS < <(docker ps --format '{{.ID}} {{.Names}} {{.Image}}' | \
   awk 'tolower($0) ~ /librechat/ {print $1}')
@@ -41,6 +44,12 @@ printf 'PDS_M7_GATEWAY_AUDIT_BEGIN\n'
 printf 'docker.version=%s\ncompose.version=%s\n' "$DOCKER_VERSION" "$COMPOSE_VERSION"
 printf 'host.memoryAvailableKiB=%s\nhost.rootAvailableKiB=%s\n' "$MEM_AVAILABLE_KIB" "$ROOT_AVAILABLE_KIB"
 printf 'gateway.port=%s\ngateway.portStatus=%s\n' "$GATEWAY_PORT" "$PORT_STATUS"
+printf 'zerotier.addresses=%s\n' "$(IFS=,; printf '%s' "${ZEROTIER_ADDRESSES[*]}")"
+if systemctl is-active --quiet zerotier-one.service; then
+  printf 'zerotier.service=active\n'
+else
+  printf 'zerotier.service=unknown\n'
+fi
 
 python3 - "$INSPECT_FILE" <<'PY'
 import hashlib, json, os, pathlib, re, sys
