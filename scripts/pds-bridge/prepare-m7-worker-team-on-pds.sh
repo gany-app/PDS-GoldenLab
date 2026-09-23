@@ -82,14 +82,43 @@ if [[ -z "$(runtime_command claude)" ]]; then
     fail "claude exists in runtime home but is absent from service PATH; manual PATH review needed"
   fi
   TMP_CLAUDE="$(mktemp /tmp/pds-m7-claude-installer-XXXXXXXX.sh)"
-  curl --fail --silent --show-error --location --max-time 120 \
-    https://claude.ai/install.sh -o "$TMP_CLAUDE" \
-    || fail "could not download official Claude Code installer"
-  printf 'claude.installer.sha256=%s\n' "$(sha256sum "$TMP_CLAUDE" | cut -d' ' -f1)"
-  runtime bash -s < "$TMP_CLAUDE" \
-    || fail "Claude Code official installer failed; no Bridge services changed"
-  [[ -n "$(runtime_command claude)" ]] \
-    || fail "Claude Code installed but not visible in service PATH; inspect before changing the unit"
+  if curl --fail --silent --show-error --location --max-time 120 \
+    https://claude.ai/install.sh -o "$TMP_CLAUDE"; then
+    printf 'claude.installer.sha256=%s\n' "$(sha256sum "$TMP_CLAUDE" | cut -d' ' -f1)"
+    runtime bash -s < "$TMP_CLAUDE" \
+      || fail "Claude Code official installer failed; inspect before retrying; services unchanged"
+    echo "claude.installMethod=native"
+  else
+    echo "claude.nativeInstaller=UNAVAILABLE"
+    echo "claude.fallback=official-npm-package (npm installation is deprecated upstream)"
+    command -v npm >/dev/null 2>&1 || fail "npm missing; cannot use official package fallback"
+    runtime npm --version >/dev/null 2>&1 || fail "npm unavailable to runtime account"
+    NPM_PREFIX="$RUN_HOME/.local"
+    if [[ -e "$NPM_PREFIX" ]]; then
+      [[ -d "$NPM_PREFIX" && "$(stat -c %U "$NPM_PREFIX")" == "$RUN_USER" ]] \
+        || fail "runtime npm prefix exists but is not owned by runtime user"
+    else
+      runtime mkdir -p "$NPM_PREFIX" || fail "runtime account cannot create npm prefix"
+    fi
+    NPM_REGISTRY=https://registry.npmjs.org
+    CLAUDE_PACKAGE=@anthropic-ai/claude-code
+    CLAUDE_VERSION="$(runtime npm view --registry="$NPM_REGISTRY" "$CLAUDE_PACKAGE" version 2>/dev/null | tail -n 1 || true)"
+    [[ "$CLAUDE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]] \
+      || fail "cannot determine a valid version from official npm registry; stop here"
+    printf 'claude.resolvedPackage=%s@%s\n' "$CLAUDE_PACKAGE" "$CLAUDE_VERSION"
+    NPM_LOG="$(mktemp /tmp/pds-m7-claude-npm-XXXXXXXX.log)"
+    if ! runtime npm install --global --prefix "$NPM_PREFIX" \
+      --registry="$NPM_REGISTRY" --no-audit --no-fund \
+      "$CLAUDE_PACKAGE@$CLAUDE_VERSION" > "$NPM_LOG" 2>&1; then
+      printf 'claude.npmLog=%s (root-only; do not paste raw log without redaction)\n' "$NPM_LOG" >&2
+      fail "npm fallback failed; services unchanged"
+    fi
+    printf 'claude.npmLog=%s (root-only)\n' "$NPM_LOG"
+    echo "claude.installMethod=npm-fallback"
+  fi
+  CLAUDE_PATH="$(runtime_command claude)"
+  [[ -n "$CLAUDE_PATH" && -x "$CLAUDE_PATH" ]] \
+    || fail "Claude Code installed but not executable via service PATH; inspect before changing the unit"
   echo "claude.install=INSTALLED"
 else
   echo "claude.install=ALREADY_PRESENT"
