@@ -4,10 +4,10 @@ set -euo pipefail
 umask 077
 
 # Filled with the reviewed private v0.1 commit before publishing this script.
-M6_COMMIT=972fa8156b991a5d464ff286d0183d7be4715547
+M6_COMMIT=c58fcc97dca8517678fbfc113980b4694f4c1f3d
 OLD_COMMIT=515f8c06fc0ef30ba95e877716b1015f4136f7c9
 OLD_DIR=/opt/pds-bridge/candidates/v0.1-m5-review-evidence
-NEW_DIR=/opt/pds-bridge/candidates/v0.1-m6-operations
+NEW_DIR=/opt/pds-bridge/candidates/v0.1-m6-operations-r2
 LIVE_DIR=/opt/pds-bridge/candidates/v0.03
 DB=/var/lib/pds-bridge/runtime-v01-stage.db
 CONFIG=/etc/pds-bridge/m5-stage/m5-stage-runtime.json
@@ -51,6 +51,8 @@ SOURCE_HOME="$(getent passwd "$SOURCE_OWNER" | cut -d: -f6)"
 [[ $(git -c "safe.directory=$OLD_DIR" -C "$OLD_DIR" rev-parse HEAD) == "$OLD_COMMIT" ]] || fail 'M5 commit changed'
 [[ -z $(git --no-optional-locks -c "safe.directory=$OLD_DIR" -C "$OLD_DIR" status --porcelain) ]] || fail 'M5 source is dirty'
 grep -Fqx "WorkingDirectory=$OLD_DIR" "$UNIT_FILE" || fail 'M5 unit working directory changed'
+WORKER_PATH="$(sed -n 's/^Environment=PATH=//p' "$UNIT_FILE")"
+[[ -n "$WORKER_PATH" ]] || fail 'candidate service PATH is missing'
 [[ $(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["databasePath"])' "$CONFIG") == "$DB" ]] || fail 'database path changed'
 
 git -c "safe.directory=$OLD_DIR" -c "safe.directory=$OLD_DIR/.git" clone -q --no-hardlinks "$OLD_DIR" "$NEW_DIR" || fail 'isolated clone failed'
@@ -141,7 +143,7 @@ done
 [[ "$READY" == 1 ]] || fail 'M6 not healthy and ready'
 systemctl is-active --quiet "$UNIT" || fail 'M6 service stopped'
 systemctl is-active --quiet "$LEGACY_UNIT" || fail 'v0.03 stopped unexpectedly'
-if ! node --no-warnings --experimental-strip-types "$NEW_DIR/src/ops/cli.ts" \
+if ! PDS_M6_WORKER_PATH="$WORKER_PATH" PDS_M6_LOCAL_HOSTS="$HOST" node --no-warnings --experimental-strip-types "$NEW_DIR/src/ops/cli.ts" \
   --config "$CONFIG" --url "http://$HOST:$PORT" doctor --deep >"$BACKUP/doctor-deep.json"; then
   python3 - "$BACKUP/doctor-deep.json" <<'PY'
 import json,sys
@@ -164,12 +166,18 @@ cat >/usr/local/bin/pds-bridge <<'WRAPPER'
 set -euo pipefail
 source_dir="$(systemctl show -P WorkingDirectory pds-bridge-v01-m5-stage.service)"
 [[ -n "$source_dir" && -f "$source_dir/src/ops/cli.ts" ]] || { echo 'PDS M6 candidate unavailable' >&2; exit 1; }
+unit_file=/etc/systemd/system/pds-bridge-v01-m5-stage.service
+bind_host="$(sed -n 's/^Environment=PDS_MCP_HOST=//p' "$unit_file")"
+bind_port="$(sed -n 's/^Environment=PDS_MCP_PORT=//p' "$unit_file")"
+worker_path="$(sed -n 's/^Environment=PATH=//p' "$unit_file")"
+[[ -n "$bind_host" && -n "$bind_port" && -n "$worker_path" ]] || { echo 'PDS M6 service configuration missing' >&2; exit 1; }
+export PDS_MCP_URL="http://$bind_host:$bind_port" PDS_M6_WORKER_PATH="$worker_path" PDS_M6_LOCAL_HOSTS="$bind_host"
 exec node --no-warnings --experimental-strip-types "$source_dir/src/ops/cli.ts" \
   --config /etc/pds-bridge/m5-stage/m5-stage-runtime.json "${@}"
 WRAPPER
 chmod 0755 /usr/local/bin/pds-bridge
 WRAPPER_CREATED=1
-node --no-warnings --experimental-strip-types "$NEW_DIR/src/ops/cli.ts" --config "$CONFIG" \
+PDS_M6_WORKER_PATH="$WORKER_PATH" PDS_M6_LOCAL_HOSTS="$HOST" node --no-warnings --experimental-strip-types "$NEW_DIR/src/ops/cli.ts" --config "$CONFIG" \
   --url "http://$HOST:$PORT" status >"$BACKUP/status.json" || fail 'status command unavailable'
 ROLLBACK=0
 printf 'PDS_M6_STAGE_REPORT_BEGIN\nsourceCommit=%s\nM6=ready\nv003=active\nhealth=healthy\nreadiness=ready\nbackup=%s\ndoctorDeep=PASS\nrestore=PASS\nupgradeMigration=PASS\ninjectedFailureRollback=PASS\nstatus=PASS\ntests=PASS\nPDS_M6_STAGE_REPORT_END\n' "$M6_COMMIT" "$BACKUP"
