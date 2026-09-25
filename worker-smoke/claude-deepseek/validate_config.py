@@ -10,6 +10,10 @@ exception escape.  Exit codes:
     0  the document is valid
     1  the document violates the configuration specification
     2  the document could not be read or parsed as JSON (also used for CLI misuse)
+
+Parsing is strict: only standard JSON is accepted, so the non-standard numeric
+constants ``NaN``, ``Infinity`` and ``-Infinity`` that Python's ``json`` module
+tolerates by default are reported as ``invalid_json_syntax`` (exit 2) instead.
 """
 
 from __future__ import annotations
@@ -298,8 +302,24 @@ def validate_document(document: Any) -> list:
 # --------------------------------------------------------------------------
 
 
+def _reject_non_standard_number(name: str) -> Any:
+    """Reject NaN / Infinity / -Infinity: valid in Python, not valid JSON.
+
+    Used as ``json.loads(..., parse_constant=...)``.  The raised ValueError is
+    turned into ConfigFileError("invalid_json_syntax", ...) by load_document().
+    """
+    raise ValueError(
+        "non-standard JSON number {0!r} is not allowed "
+        "(NaN, Infinity and -Infinity are not valid JSON)".format(name)
+    )
+
+
 def load_document(path: str) -> Any:
-    """Read and decode a JSON document; raise ConfigFileError when impossible."""
+    """Read and decode a JSON document; raise ConfigFileError when impossible.
+
+    The document is parsed as strict JSON: Python's default acceptance of the
+    NaN, Infinity and -Infinity literals is disabled via ``parse_constant``.
+    """
     try:
         with open(path, "r", encoding="utf-8") as handle:
             raw = handle.read()
@@ -326,7 +346,7 @@ def load_document(path: str) -> Any:
         ) from exc
 
     try:
-        return json.loads(raw)
+        return json.loads(raw, parse_constant=_reject_non_standard_number)
     except json.JSONDecodeError as exc:
         raise ConfigFileError(
             "invalid_json_syntax",
