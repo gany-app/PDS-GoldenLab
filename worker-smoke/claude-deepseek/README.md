@@ -7,7 +7,7 @@ behaviour of every rule below.
 ```
 json-validator/
 ├── validate_config.py         # validator + CLI
-├── test_validate_config.py    # 54 unittest cases
+├── test_validate_config.py    # 59 unittest cases
 ├── fixtures/
 │   ├── valid.json             # valid document (3 workers, 3 model profiles)
 │   └── invalid.json           # invalid document (20 defects, one per defect class)
