@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "workers": [
+    {
+      "id": "worker-atlas-01",
+      "level": "L1",
+      "model_profile": "nebula-standard",
+      "timeout_seconds": 60,
+      "concurrency_limit": 2
+    },
+    {
+      "id": "worker-atlas-01",
+      "level": "L4",
+      "model_profile": "ghost-profile",
+      "timeout_seconds": 0,
+      "concurrency_limit": 12
+    },
+    {
+      "id": "worker-float-03",
+      "level": "L2",
+      "model_profile": "nebula-standard",
+      "timeout_seconds": 12.5,
+      "concurrency_limit": true
+    },
+    {
+      "id": "   ",
+      "level": "L3",
+      "model_profile": "nebula-standard",
+      "timeout_seconds": 3601,
+      "concurrency_limit": 0
+    },
+    {
+      "id": "worker-sparse-05",
+      "level": "L2",
+      "model_profile": "   ",
+      "timeout_seconds": "120",
+      "concurrency_limit": null
+    },
+    {
+      "id": "worker-nolimit-06",
+      "level": 2,
+      "model_profile": "ghost",
+      "timeout_seconds": 300
+    },
+    "worker-not-an-object"
+  ],
+  "model_profiles": [
+    {
+      "id": "nebula-standard",
+      "provider": "Nimbus AI (fictional)",
+      "model": "nebula-chat-x1"
+    },
+    {
+      "id": "nebula-standard",
+      "provider": "Aurora Labs (fictional)",
+      "model": "quasar-code-7b"
+    },
+    {
+      "id": "ghost",
+      "provider": "   ",
+      "model": ""
+    },
+    "profile-not-an-object"
+  ]
+}
