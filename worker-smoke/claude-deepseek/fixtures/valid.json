@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "workers": [
+    {
+      "id": "worker-atlas-01",
+      "level": "L1",
+      "model_profile": "nebula-standard",
+      "timeout_seconds": 120,
+      "concurrency_limit": 2,
+      "description": "Fixture worker for ingestion (fictional)",
+      "labels": ["ingest", "eu-west"]
+    },
+    {
+      "id": "worker-beacon-02",
+      "level": "L2",
+      "model_profile": "nebula-deep",
+      "timeout_seconds": 3600,
+      "concurrency_limit": 8,
+      "description": "Fixture worker for independent review (fictional)"
+    },
+    {
+      "id": "worker-cinder-03",
+      "level": "L3",
+      "model_profile": "quasar-fast",
+      "timeout_seconds": 1,
+      "concurrency_limit": 1,
+      "description": "Fixture worker for escalation (fictional)"
+    }
+  ],
+  "model_profiles": [
+    {
+      "id": "nebula-standard",
+      "provider": "Nimbus AI (fictional)",
+      "model": "nebula-chat-x1",
+      "context_tokens": 32768
+    },
+    {
+      "id": "nebula-deep",
+      "provider": "Nimbus AI (fictional)",
+      "model": "nebula-reason-9b",
+      "notes": "long-horizon review profile (fictional)"
+    },
+    {
+      "id": "quasar-fast",
+      "provider": "Aurora Labs (fictional)",
+      "model": "quasar-code-7b"
+    }
+  ]
+}
