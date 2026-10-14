@@ -43,6 +43,26 @@ class SummarizeTests(unittest.TestCase):
             )
             self.assertEqual(summarize(path), {"rows": 3, "total": "0.60"})
 
+    def test_exact_sum_beyond_default_precision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self._write(
+                directory, "name,amount\na,0.12345678901234567890123456789\n"
+            )
+            self.assertEqual(
+                summarize(path),
+                {"rows": 1, "total": "0.12345678901234567890123456789"},
+            )
+
+    def test_non_finite_amount_reports_file_line(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for raw in ("NaN", "Infinity", "-Infinity"):
+                path = self._write(
+                    directory, "name,amount\nalice,1.00\nbob,%s\n" % raw
+                )
+                with self.assertRaises(ValueError) as raised:
+                    summarize(path)
+                self.assertIn("line 3", str(raised.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
